@@ -1,0 +1,117 @@
+# 3D-GDM 统一扩散训练配置文件
+# 使用方法: python train.py --config configs/3dgdm_config.yaml
+
+# 数据配置
+data:
+  source_path: "datasets/garden"          # 场景数据路径
+  model_path: "output/garden/3dgdm"        # 模型输出路径
+  style_image: "images"                    # 风格图像路径（可以是单个文件或文件夹）
+  # style_image: "images/0.jpg"            # 单个风格图像示例
+  # style_image: "styles/starry_night.jpg" # 自定义风格图像示例
+  
+# 训练配置
+training:
+  iterations: 30000                        # 总训练迭代数
+  batch_size: 1                           # 批次大小
+  learning_rate: 0.0001                   # 学习率
+  
+  # 检查点和保存
+  save_iterations: [7000, 15000, 30000]   # 保存模型的迭代点
+  test_iterations: [7000, 15000, 30000]   # 测试的迭代点
+  checkpoint_iterations: [7000, 15000, 30000]  # 检查点迭代
+  
+# 3D-GDM扩散配置
+diffusion:
+  timesteps: 1000                         # 扩散时间步数
+  coarse_steps: 250                      # 粗糙阶段步数
+  fine_steps: 750                        # 精细阶段步数
+  noise_schedule: "linear"               # 噪声调度策略
+  beta_start: 0.0001                     # 起始beta值
+  beta_end: 0.02                         # 结束beta值
+  
+  # 扩散模型架构
+  model:
+    unet_channels: [64, 128, 256, 512]    # UNet通道数
+    attention_resolutions: [16, 8]         # 注意力分辨率
+    num_heads: 8                          # 多头注意力头数
+    dropout: 0.1                         # Dropout率
+
+# 多风格训练配置
+multi_style:
+  enable: true                           # 启用多风格训练
+  mixing_probability: 0.3                # 风格混合概率
+  curriculum_learning: true              # 启用课程学习
+  style_diversity_weight: 0.1            # 风格多样性损失权重
+  # 课程学习阶段配置
+  curriculum_stages:
+    single_style_ratio: 0.3              # 单风格训练阶段比例（前30%）
+    mixed_intro_ratio: 0.4               # 风格混合引入阶段比例（30%-70%）
+    full_random_ratio: 0.3               # 完全随机阶段比例（后30%）
+    
+# 损失权重配置
+loss_weights:
+  content_weight: 1.0                    # 内容损失权重
+  style_weight: 1.0                      # 风格损失权重
+  diffusion_weight: 1.0                  # 扩散损失权重
+  significance_weight: 0.5               # 显著性注意力权重
+  consistency_weight: 0.1                # 风格一致性权重
+  
+# 显著性注意力配置
+significance_attention:
+  feature_dim: 512                       # 特征维度
+  num_heads: 8                          # 注意力头数
+  multi_scale: true                     # 是否使用多尺度特征
+  spatial_attention: true               # 是否使用空间注意力
+  
+# 自适应风格特征场配置
+style_feature_field:
+  style_dim: 512                        # 风格特征维度
+  field_resolution: 64                  # 3D场分辨率
+  num_layers: 5                         # VGG层数
+  intensity_control: true               # 是否启用强度控制
+  
+# 渲染配置
+rendering:
+  image_resolution: [800, 800]          # 渲染图像分辨率
+  background_color: [1.0, 1.0, 1.0]     # 背景颜色 (白色)
+  
+# 优化器配置
+optimizer:
+  type: "Adam"                          # 优化器类型
+  lr_schedule:
+    type: "exponential"                 # 学习率调度类型
+    gamma: 0.95                        # 衰减因子
+    step_size: 1000                    # 衰减步长
+    
+# 高斯点云配置
+gaussian:
+  sh_degree: 3                          # 球谐函数阶数
+  densification:
+    start_iter: 500                     # 开始致密化的迭代
+    end_iter: 15000                     # 结束致密化的迭代
+    densify_grad_threshold: 0.0002      # 致密化梯度阈值
+    opacity_threshold: 0.005            # 不透明度阈值
+    
+# 评估配置
+evaluation:
+  metrics: ["PSNR", "SSIM", "LPIPS"]    # 评估指标
+  save_images: true                     # 是否保存渲染图像
+  save_videos: true                     # 是否保存视频
+  
+# 可视化配置
+visualization:
+  tensorboard: true                     # 是否使用TensorBoard
+  wandb: false                         # 是否使用Weights & Biases
+  log_interval: 100                    # 日志记录间隔
+  
+# 硬件配置
+hardware:
+  device: "cuda"                        # 设备类型
+  mixed_precision: true                # 是否使用混合精度
+  gradient_checkpointing: false        # 是否使用梯度检查点
+  
+# 调试配置
+debug:
+  save_intermediate: false             # 是否保存中间结果
+  profile_memory: false                # 是否分析内存使用
+  verbose: true                        # 是否详细输出

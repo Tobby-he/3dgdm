@@ -1,0 +1,8 @@
+submodules/diff-gaussian-rasterization
+submodules/feature-gaussian-rasterization
+submodules/simple-knn
+six
+tensorboard
+viser
+scikit-learn
+fast_pytorch_kmeans
