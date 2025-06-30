@@ -65,6 +65,28 @@ def inference_3dgdm(checkpoint_path, style_image_path, output_dir, source_path):
     model_params.white_background = False  # 添加 white_background 属性
     model_params.resolution = -1  # 添加 resolution 属性
     
+    # 尝试从检查点目录读取cfg_args文件
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    cfg_args_path = os.path.join(checkpoint_dir, "cfg_args")
+    
+    if os.path.exists(cfg_args_path):
+        try:
+            with open(cfg_args_path, 'r') as f:
+                cfg_content = f.read().strip()
+                # 解析Namespace字符串
+                import re
+                white_bg_match = re.search(r'white_background=([^,\)]+)', cfg_content)
+                if white_bg_match:
+                    white_bg_value = white_bg_match.group(1).strip()
+                    model_params.white_background = white_bg_value.lower() == 'true'
+                    print(f"从cfg_args读取到white_background={model_params.white_background}")
+                else:
+                    print("cfg_args中未找到white_background配置，使用默认值False")
+        except Exception as e:
+            print(f"读取cfg_args文件失败: {e}，使用默认背景设置")
+    else:
+        print(f"cfg_args文件不存在: {cfg_args_path}，使用默认背景设置")
+    
     pipeline_params = PipelineParams(temp_parser)
     
     # 创建优化参数（用于恢复高斯参数）
@@ -116,7 +138,9 @@ def inference_3dgdm(checkpoint_path, style_image_path, output_dir, source_path):
     with torch.no_grad():
         for idx, camera in enumerate(tqdm(cameras[:10], desc="渲染视角")):
             # 使用标准渲染进行推理
-            background = torch.tensor([1.0, 1.0, 1.0], device=device)
+            # 根据数据集配置设置背景颜色
+            bg_color = [1.0, 1.0, 1.0] if model_params.white_background else [0.0, 0.0, 0.0]
+            background = torch.tensor(bg_color, device=device)
             rendered_image = render(camera, gaussians, pipeline_params, background)["render"]
             
             # 应用风格迁移（简化版本）

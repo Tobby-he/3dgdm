@@ -38,13 +38,37 @@ class GDMInference:
         self.gaussians = None
         self.scene = None
         self.diffusion_model = None
+        self.dataset = None
         
     def load_model(self, iteration=None):
         """加载训练好的模型"""
         print("正在加载3D-GDM模型...")
         
+        # 加载数据集配置
+        from arguments import ModelParams
+        self.dataset = ModelParams()
+        self.dataset.model_path = self.model_path
+        
+        # 尝试从cfg_args文件加载配置
+        cfg_args_path = os.path.join(self.model_path, "cfg_args")
+        if os.path.exists(cfg_args_path):
+            import argparse
+            with open(cfg_args_path, 'r') as f:
+                content = f.read()
+                # 解析Namespace对象
+                if 'white_background=False' in content:
+                    self.dataset.white_background = False
+                elif 'white_background=True' in content:
+                    self.dataset.white_background = True
+                else:
+                    self.dataset.white_background = False  # 默认值
+        else:
+            self.dataset.white_background = False  # 默认值
+            
+        print(f"数据集背景设置: {'白色' if self.dataset.white_background else '黑色'}")
+        
         # 加载场景
-        self.scene = Scene(self.model_path, load_iteration=iteration)
+        self.scene = Scene(self.dataset, load_iteration=iteration)
         self.gaussians = self.scene.gaussians
         
         # 加载3D-GDM相关模型
@@ -157,8 +181,12 @@ class GDMInference:
         # 使用第一个训练视角进行渲染
         viewpoint = self.scene.getTrainCameras()[0]
         
+        # 根据数据集配置设置背景颜色
+        bg_color = [1, 1, 1] if self.dataset.white_background else [0, 0, 0]
+        background = torch.tensor(bg_color, dtype=torch.float32, device=self.device)
+        
         # 渲染图像
-        rendering = render(viewpoint, self.gaussians, background=torch.tensor([1, 1, 1], device=self.device))
+        rendering = render(viewpoint, self.gaussians, background=background)
         rendered_image = rendering["render"]
         
         return rendered_image.unsqueeze(0)  # 添加batch维度

@@ -299,6 +299,28 @@ def inference_3dgdm_enhanced(checkpoint_path, style_image_path, output_dir, sour
     model_params = TempModelParams()
     model_params.resolution = -1
     
+    # 尝试从检查点目录读取cfg_args文件
+    checkpoint_dir = os.path.dirname(checkpoint_path)
+    cfg_args_path = os.path.join(checkpoint_dir, "cfg_args")
+    
+    if os.path.exists(cfg_args_path):
+        try:
+            with open(cfg_args_path, 'r') as f:
+                cfg_content = f.read().strip()
+                # 解析Namespace字符串
+                import re
+                white_bg_match = re.search(r'white_background=([^,\)]+)', cfg_content)
+                if white_bg_match:
+                    white_bg_value = white_bg_match.group(1).strip()
+                    model_params.white_background = white_bg_value.lower() == 'true'
+                    print(f"从cfg_args读取到white_background={model_params.white_background}")
+                else:
+                    print("cfg_args中未找到white_background配置，使用默认值False")
+        except Exception as e:
+            print(f"读取cfg_args文件失败: {e}，使用默认背景设置")
+    else:
+        print(f"cfg_args文件不存在: {cfg_args_path}，使用默认背景设置")
+    
     scene = Scene(model_params, gaussians=GaussianModel(3), load_iteration=None, shuffle=False)
     
     # 恢复高斯参数
@@ -365,7 +387,9 @@ def inference_3dgdm_enhanced(checkpoint_path, style_image_path, output_dir, sour
     print("正在加载风格图像...")
     # 首先进行一次测试渲染来获取渲染图像的尺寸
     test_camera = cameras[0]
-    background = torch.tensor([1.0, 1.0, 1.0], device=device)
+    # 根据数据集配置设置背景颜色
+    bg_color = [1.0, 1.0, 1.0] if model_params.white_background else [0.0, 0.0, 0.0]
+    background = torch.tensor(bg_color, device=device)
     test_render = render(test_camera, gaussians, pipeline_params, background)["render"]
     render_height, render_width = test_render.shape[1], test_render.shape[2]
     
@@ -385,7 +409,9 @@ def inference_3dgdm_enhanced(checkpoint_path, style_image_path, output_dir, sour
             torch.cuda.empty_cache()
             
             # 标准渲染
-            background = torch.tensor([1.0, 1.0, 1.0], device=device)
+            # 根据数据集配置设置背景颜色
+            bg_color = [1.0, 1.0, 1.0] if model_params.white_background else [0.0, 0.0, 0.0]
+            background = torch.tensor(bg_color, device=device)
             render_pkg = render(camera, gaussians, pipeline_params, background)
             original_render = render_pkg["render"]
             

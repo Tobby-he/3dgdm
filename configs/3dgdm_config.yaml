@@ -3,22 +3,22 @@
 
 # 数据配置
 data:
-  source_path: "datasets/garden"          # 场景数据路径
-  model_path: "output/garden/3dgdm"        # 模型输出路径
+  source_path: "datasets/Horse"          # 场景数据路径
+  model_path: "output/Horse/3dgdm"        # 模型输出路径
   style_image: "images"                    # 风格图像路径（可以是单个文件或文件夹）
   # style_image: "images/0.jpg"            # 单个风格图像示例
   # style_image: "styles/starry_night.jpg" # 自定义风格图像示例
   
 # 训练配置
 training:
-  iterations: 30000                        # 总训练迭代数
+  iterations: 30000                        # 总训练迭代数（增加到30000以提高重建质量）
   batch_size: 1                           # 批次大小
-  learning_rate: 0.0001                   # 学习率
+  learning_rate: 0.0002                   # 提高学习率加速收敛
   
   # 检查点和保存
   save_iterations: [7000, 15000, 30000]   # 保存模型的迭代点
   test_iterations: [7000, 15000, 30000]   # 测试的迭代点
-  checkpoint_iterations: [7000, 15000, 30000]  # 检查点迭代
+  checkpoint_iterations: [7000, 15000, 30000] # 检查点迭代
   
 # 3D-GDM扩散配置
 diffusion:
@@ -36,12 +36,12 @@ diffusion:
     num_heads: 8                          # 多头注意力头数
     dropout: 0.1                         # Dropout率
 
-# 多风格训练配置
+# 多风格训练配置（为重建质量优化）
 multi_style:
-  enable: true                           # 启用多风格训练
-  mixing_probability: 0.3                # 风格混合概率
-  curriculum_learning: true              # 启用课程学习
-  style_diversity_weight: 0.1            # 风格多样性损失权重
+  enable: false                          # 禁用多风格训练节省内存
+  mixing_probability: 0.1                # 降低风格混合概率
+  curriculum_learning: false             # 禁用课程学习
+  style_diversity_weight: 0.05           # 降低风格多样性权重
   # 课程学习阶段配置
   curriculum_stages:
     single_style_ratio: 0.3              # 单风格训练阶段比例（前30%）
@@ -50,11 +50,11 @@ multi_style:
     
 # 损失权重配置
 loss_weights:
-  content_weight: 1.0                    # 内容损失权重
-  style_weight: 1.0                      # 风格损失权重
-  diffusion_weight: 1.0                  # 扩散损失权重
-  significance_weight: 0.5               # 显著性注意力权重
-  consistency_weight: 0.1                # 风格一致性权重
+  content_weight: 2.0                    # 提高内容损失权重优先重建
+  style_weight: 0.3                      # 降低风格损失权重
+  diffusion_weight: 0.5                  # 降低扩散损失权重
+  significance_weight: 0.2               # 降低显著性注意力权重
+  consistency_weight: 0.05               # 降低风格一致性权重
   
 # 显著性注意力配置
 significance_attention:
@@ -63,16 +63,16 @@ significance_attention:
   multi_scale: true                     # 是否使用多尺度特征
   spatial_attention: true               # 是否使用空间注意力
   
-# 自适应风格特征场配置
+# 自适应风格特征场配置（内存优化）
 style_feature_field:
-  style_dim: 512                        # 风格特征维度
-  field_resolution: 64                  # 3D场分辨率
-  num_layers: 5                         # VGG层数
-  intensity_control: true               # 是否启用强度控制
+  style_dim: 256                        # 降低风格特征维度节省内存
+  field_resolution: 64                  # 降低3D场分辨率节省内存
+  num_layers: 3                         # 减少VGG层数
+  intensity_control: false              # 禁用强度控制节省计算
   
-# 渲染配置
+# 渲染配置（内存优化）
 rendering:
-  image_resolution: [800, 800]          # 渲染图像分辨率
+  image_resolution: [512, 512]          # 降低渲染分辨率节省内存
   background_color: [1.0, 1.0, 1.0]     # 背景颜色 (白色)
   
 # 优化器配置
@@ -83,13 +83,13 @@ optimizer:
     gamma: 0.95                        # 衰减因子
     step_size: 1000                    # 衰减步长
     
-# 高斯点云配置
+# 高斯点云配置（重建质量优化）
 gaussian:
-  sh_degree: 3                          # 球谐函数阶数
+  sh_degree: 3                          # 降低球谐函数阶数节省内存
   densification:
-    start_iter: 500                     # 开始致密化的迭代
-    end_iter: 15000                     # 结束致密化的迭代
-    densify_grad_threshold: 0.0002      # 致密化梯度阈值
+    start_iter: 500                     # 开始致密化
+    end_iter: 15000                     # 在15000迭代前完成致密化
+    densify_grad_threshold: 0.0002      # 梯度阈值
     opacity_threshold: 0.005            # 不透明度阈值
     
 # 评估配置
@@ -104,11 +104,11 @@ visualization:
   wandb: false                         # 是否使用Weights & Biases
   log_interval: 100                    # 日志记录间隔
   
-# 硬件配置
+# 硬件配置（4GB显存优化）
 hardware:
   device: "cuda"                        # 设备类型
-  mixed_precision: true                # 是否使用混合精度
-  gradient_checkpointing: false        # 是否使用梯度检查点
+  mixed_precision: true                # 使用混合精度节省内存
+  gradient_checkpointing: true         # 启用梯度检查点节省内存
   
 # 调试配置
 debug:

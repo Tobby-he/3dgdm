@@ -1,0 +1,4 @@
+# ninja log v6
+5	11296	7672844341945837	E:/StyleGaussian-main/submodules/simple-knn/build/temp.win-amd64-cpython-38/Release/simple_knn.obj	809b4fecc1c947d1
+1	11671	7672844341889826	E:/StyleGaussian-main/submodules/simple-knn/build/temp.win-amd64-cpython-38/Release/ext.obj	bd1df11f0949e1a2
+7	34070	7672844341967708	E:/StyleGaussian-main/submodules/simple-knn/build/temp.win-amd64-cpython-38/Release/spatial.obj	502a41507f604204

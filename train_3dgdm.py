@@ -87,7 +87,8 @@ class ThreeDGaussianDiffusionModel(nn.Module):
     """3D高斯扩散模型主类"""
     
     def __init__(self, gaussian_dim=3, feature_dim=256, num_timesteps=1000, 
-                 enable_style_mixing=True, mixing_probability=0.3, voxel_resolution=32):
+                 enable_style_mixing=True, mixing_probability=0.3, voxel_resolution=32,
+                 content_weight=1.0, style_weight=10.0, diffusion_weight=1.0):
         super().__init__()
         self.num_timesteps = num_timesteps
         self.coarse_steps = num_timesteps // 4  # 粗糙扩散步数
@@ -108,10 +109,16 @@ class ThreeDGaussianDiffusionModel(nn.Module):
         # 注意：梯度检查点将在forward方法中手动应用
         self.vgg_encoder = VGGEncoder().cuda()
         
-        # 损失权重
-        self.content_weight = 1.0
-        self.style_weight = 10.0
-        self.diffusion_weight = 1.0
+        # 损失权重（从配置文件传入）
+        self.content_weight = content_weight
+        self.style_weight = style_weight
+        self.diffusion_weight = diffusion_weight
+        
+        print(f"=== 损失权重配置 ===")
+        print(f"内容损失权重: {self.content_weight}")
+        print(f"风格损失权重: {self.style_weight}")
+        print(f"扩散损失权重: {self.diffusion_weight}")
+        print(f"==================")
         
         # 风格多样性损失权重
         self.diversity_weight = 0.1
@@ -286,9 +293,12 @@ def training_3dgdm(dataset, opt, pipe, testing_iterations, saving_iterations,
     print(f"课程学习: {'启用' if curriculum_learning else '禁用'}")
     print(f"==================\n")
     
-    # 初始化模型
+    # 初始化模型（传递损失权重参数）
     model_3dgdm = ThreeDGaussianDiffusionModel(
-        voxel_resolution=voxel_resolution
+        voxel_resolution=voxel_resolution,
+        content_weight=getattr(opt, 'content_weight', 1.0),
+        style_weight=getattr(opt, 'style_weight', 10.0),
+        diffusion_weight=getattr(opt, 'diffusion_weight', 1.0)
     ).cuda()
     
     # 内存监控
@@ -382,6 +392,18 @@ def training_3dgdm(dataset, opt, pipe, testing_iterations, saving_iterations,
             # 前向传播
             outputs = model_3dgdm(gaussians, current_style, viewpoint_cam, pipe, background, timestep)
             
+            # 获取渲染信息用于致密化
+            if 'render_pkg' in outputs:
+                render_pkg = outputs['render_pkg']
+                viewspace_point_tensor = render_pkg.get("viewspace_points", None)
+                visibility_filter = render_pkg.get("visibility_filter", None)
+                radii = render_pkg.get("radii", None)
+            else:
+                # 如果模型输出中没有render_pkg，则设为None
+                viewspace_point_tensor = None
+                visibility_filter = None
+                radii = None
+            
             # 计算损失
             gt_image = viewpoint_cam.original_image.cuda()
             losses = model_3dgdm.compute_loss(outputs, gt_image, current_style, timestep)
@@ -398,6 +420,28 @@ def training_3dgdm(dataset, opt, pipe, testing_iterations, saving_iterations,
         if (iteration + 1) % 8 == 0:
             scaler.step(optimizer)
             scaler.update()
+            
+            # 致密化逻辑（参考train_reconstruction.py）
+            with torch.no_grad():
+                # 收集渲染信息用于致密化
+                if iteration < opt.densify_until_iter and viewspace_point_tensor is not None and visibility_filter is not None and radii is not None:
+                    # 记录高斯点的梯度信息
+                    gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+                    gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+                     
+                    # 执行致密化
+                    if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0:
+                        size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                        gaussians.densify_and_prune(opt.densify_grad_threshold, 0.005, scene.cameras_extent, size_threshold)
+                        print(f"[ITER {iteration}] 执行致密化: 当前高斯点数量 = {gaussians.get_xyz.shape[0]}")
+                     
+                    # 重置透明度
+                    if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+                        gaussians.reset_opacity()
+                        print(f"[ITER {iteration}] 重置透明度")
+                elif iteration < opt.densify_until_iter:
+                    print(f"[ITER {iteration}] 警告: 无法获取渲染信息，跳过致密化")
+            
             # 清理GPU内存
             torch.cuda.empty_cache()
         
@@ -474,15 +518,20 @@ def training_3dgdm(dataset, opt, pipe, testing_iterations, saving_iterations,
 
 if __name__ == "__main__":
     import argparse
+    import yaml
     from arguments import ModelParams, PipelineParams, OptimizationParams
     
     parser = argparse.ArgumentParser(description="3D-GDM Training")
+    
+    # 添加配置文件参数
+    parser.add_argument("--config", type=str, help="Path to YAML config file")
+    
     lp = ModelParams(parser)
     op = OptimizationParams(parser)
     pp = PipelineParams(parser)
     
     # 3D-GDM特定参数
-    parser.add_argument("--style_image", type=str, required=True, help="Path to style image or style folder")
+    parser.add_argument("--style_image", type=str, default=None, help="Path to style image or style folder")
     parser.add_argument("--diffusion_steps", type=int, default=1000, help="Number of diffusion steps")
     parser.add_argument("--coarse_ratio", type=float, default=0.7, help="Ratio of coarse diffusion steps")
     parser.add_argument("--style_weight", type=float, default=10.0, help="Style loss weight")
@@ -509,6 +558,92 @@ if __name__ == "__main__":
     parser.add_argument("--debug_from", type=int, default=-1, help="Debug from iteration")
     
     args = parser.parse_args()
+    
+    # 加载配置文件
+    if args.config:
+        with open(args.config, 'r', encoding='utf-8') as f:
+            config = yaml.safe_load(f)
+        
+        # 将配置文件中的参数应用到args中
+        def apply_config_to_args(args, config):
+            # 数据配置映射
+            if 'data' in config:
+                data_config = config['data']
+                if 'source_path' in data_config and (args.source_path is None or args.source_path == ""):
+                    args.source_path = data_config['source_path']
+                if 'model_path' in data_config and (args.model_path is None or args.model_path == ""):
+                    args.model_path = data_config['model_path']
+                if 'style_image' in data_config and args.style_image is None:
+                    args.style_image = data_config['style_image']
+            
+            # 训练配置映射
+            if 'training' in config:
+                train_config = config['training']
+                if 'iterations' in train_config:
+                    args.iterations = train_config['iterations']
+                if 'save_iterations' in train_config:
+                    args.save_iterations = train_config['save_iterations']
+                if 'test_iterations' in train_config:
+                    args.test_iterations = train_config['test_iterations']
+                if 'checkpoint_iterations' in train_config:
+                    args.checkpoint_iterations = train_config['checkpoint_iterations']
+            
+            # 扩散配置映射
+            if 'diffusion' in config:
+                diff_config = config['diffusion']
+                if 'timesteps' in diff_config:
+                    args.diffusion_steps = diff_config['timesteps']
+            
+            # 多风格配置映射
+            if 'multi_style' in config:
+                multi_config = config['multi_style']
+                if 'enable' in multi_config:
+                    args.enable_multi_style = multi_config['enable']
+                if 'mixing_probability' in multi_config:
+                    args.style_mixing_prob = multi_config['mixing_probability']
+                if 'curriculum_learning' in multi_config:
+                    args.curriculum_learning = multi_config['curriculum_learning']
+            
+            # 损失权重配置映射
+            if 'loss_weights' in config:
+                loss_config = config['loss_weights']
+                if 'content_weight' in loss_config:
+                    args.content_weight = loss_config['content_weight']
+                if 'style_weight' in loss_config:
+                    args.style_weight = loss_config['style_weight']
+                if 'diffusion_weight' in loss_config:
+                    args.diffusion_weight = loss_config['diffusion_weight']
+                if 'significance_weight' in loss_config:
+                    args.significance_weight = loss_config['significance_weight']
+            
+            # 硬件配置映射
+            if 'hardware' in config:
+                hw_config = config['hardware']
+                if 'gradient_checkpointing' in hw_config:
+                    args.gradient_checkpointing = hw_config['gradient_checkpointing']
+            
+            # 高斯点云致密化配置映射
+            if 'gaussian' in config:
+                gaussian_config = config['gaussian']
+                if 'densification' in gaussian_config:
+                    densify_config = gaussian_config['densification']
+                    if 'start_iter' in densify_config:
+                        args.densify_from_iter = densify_config['start_iter']
+                    if 'end_iter' in densify_config:
+                        args.densify_until_iter = densify_config['end_iter']
+                    if 'densify_grad_threshold' in densify_config:
+                        args.densify_grad_threshold = densify_config['densify_grad_threshold']
+                    if 'opacity_threshold' in densify_config:
+                        args.opacity_threshold = densify_config['opacity_threshold']
+        
+        apply_config_to_args(args, config)
+        print(f"已加载配置文件: {args.config}")
+    
+    # 验证必需参数
+    if args.style_image is None:
+        print("错误: 必须提供风格图像路径！")
+        print("请在配置文件中设置 data.style_image 或使用 --style_image 参数")
+        exit(1)
     
     print("=== 3D-GDM 统一扩散训练 ===")
     print(f"数据路径: {args.source_path}")

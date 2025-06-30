@@ -1,0 +1,6 @@
+# ninja log v6
+4	3353	7672843618669267	E:/StyleGaussian-main/submodules/feature-gaussian-rasterization/build/temp.win-amd64-cpython-38/Release/cuda_rasterizer/forward.obj	5e7b73df2d4915e5
+1	3521	7672843618628118	E:/StyleGaussian-main/submodules/feature-gaussian-rasterization/build/temp.win-amd64-cpython-38/Release/cuda_rasterizer/backward.obj	68506b71a76a5edf
+6	9240	7672843618698111	E:/StyleGaussian-main/submodules/feature-gaussian-rasterization/build/temp.win-amd64-cpython-38/Release/cuda_rasterizer/rasterizer_impl.obj	83773a56ce09a7ff
+8	13278	7672843618720320	E:/StyleGaussian-main/submodules/feature-gaussian-rasterization/build/temp.win-amd64-cpython-38/Release/ext.obj	c382d98912eff986
+11	37142	7672843618720320	E:/StyleGaussian-main/submodules/feature-gaussian-rasterization/build/temp.win-amd64-cpython-38/Release/rasterize_points.obj	31bb3ea3160cd97
